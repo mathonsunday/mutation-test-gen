@@ -1,0 +1,32 @@
+{
+  "name": "mutation-test-gen",
+  "version": "1.0.0",
+  "description": "Generate mutation-guided test prompts for AI coding agents",
+  "main": "dist/generate-mutants.js",
+  "bin": {
+    "mutation-test-gen": "./dist/generate-mutants.js",
+    "claude-test-prompt": "./dist/claude-test-prompt.js"
+  },
+  "scripts": {
+    "build": "tsc",
+    "generate": "ts-node src/generate-mutants.ts",
+    "prompt": "ts-node src/claude-test-prompt.ts",
+    "test": "echo \"Error: no test specified\" && exit 1"
+  },
+  "keywords": [
+    "mutation-testing",
+    "test-generation",
+    "ai",
+    "claude"
+  ],
+  "author": "",
+  "license": "MIT",
+  "dependencies": {
+    "@stryker-mutator/api": "^9.4.0",
+    "@stryker-mutator/instrumenter": "^9.4.0",
+    "@types/node": "^25.0.10",
+    "ts-morph": "^27.0.2",
+    "ts-node": "^10.9.2",
+    "typescript": "^5.9.3"
+  }
+}
