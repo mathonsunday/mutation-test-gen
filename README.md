@@ -1,6 +1,8 @@
 # Mutation-Guided Test Generator
 
-A tool that generates mutations for your code and creates prompts for AI agents to write high-quality tests that catch those mutations.
+A tool that generates mutations for TypeScript/JavaScript code and creates prompts for AI agents to write high-quality tests that catch those mutations.
+
+> **Note**: This tool currently only supports TypeScript and JavaScript (`.ts`, `.tsx`, `.js`, `.jsx` files).
 
 ## The Problem
 
@@ -97,6 +99,17 @@ npx ts-node src/generate-mutants.ts --git-diff | claude
 - **Unary operators**: Remove `!`, flip `++`/`--`
 - **Boolean literals**: `true` → `false`
 - **Conditionals**: Always true/false
+
+## Implementation
+
+This tool uses **AST-based mutation generation** via [ts-morph](https://github.com/dsherret/ts-morph) (a TypeScript Compiler API wrapper):
+
+1. Parses source files into an Abstract Syntax Tree
+2. Walks the tree to find mutatable nodes (operators, literals, conditionals)
+3. Generates precise mutations with exact line/column locations
+4. Outputs formatted prompts with surrounding code context
+
+Because it relies on TypeScript's compiler API, it only works with TypeScript/JavaScript. Supporting other languages would require swapping in a different parser (e.g., tree-sitter for polyglot support).
 
 ## Why This Works
 
