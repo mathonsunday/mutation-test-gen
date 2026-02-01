@@ -1,5 +1,5 @@
 #!/usr/bin/env node
-import { generateMutants, formatMutantsForTestGeneration } from "./generate-mutants";
+import { generateMutants, formatMutantsForTestGeneration, formatGroupedMutantsForTestGeneration } from "./generate-mutants";
 import * as fs from "fs";
 import * as path from "path";
 
@@ -7,6 +7,7 @@ interface TestGenerationContext {
   mutants: Awaited<ReturnType<typeof generateMutants>>;
   sourceCode: Map<string, string>;
   existingTests?: Map<string, string>;
+  dedup?: boolean;
 }
 
 /**
@@ -28,7 +29,10 @@ Each mutation below represents a realistic bug that could occur. Your job is to 
 `;
 
   // Add the formatted mutants
-  prompt += formatMutantsForTestGeneration(mutants);
+  const shouldDedup = context.dedup !== false;
+  prompt += shouldDedup
+    ? formatGroupedMutantsForTestGeneration(mutants)
+    : formatMutantsForTestGeneration(mutants);
 
   // Add existing tests if available for context
   if (existingTests && existingTests.size > 0) {
@@ -102,6 +106,7 @@ export async function generateClaudeTestPrompt(options: {
   fromGitDiff?: boolean;
   baseBranch?: string;
   includeExistingTests?: boolean;
+  dedup?: boolean;
 }): Promise<string> {
   const mutants = await generateMutants({
     files: options.files,
@@ -132,6 +137,7 @@ export async function generateClaudeTestPrompt(options: {
     mutants,
     sourceCode,
     existingTests,
+    dedup: options.dedup,
   });
 }
 
@@ -144,6 +150,7 @@ async function main() {
     fromGitDiff: args.includes("--git-diff"),
     baseBranch: args.includes("--base") ? args[args.indexOf("--base") + 1] : undefined,
     includeExistingTests: args.includes("--include-existing-tests"),
+    dedup: !args.includes("--no-dedup"),
   };
 
   if (options.files.length === 0 && !options.fromGitDiff) {

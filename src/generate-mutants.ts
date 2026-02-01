@@ -16,6 +16,7 @@ export interface MutantInfo {
   };
   context: string;
   description: string;
+  expressionText?: string;
 }
 
 interface GenerateMutantsOptions {
@@ -122,6 +123,7 @@ function collectBinaryMutations(sourceFile: SourceFile, fileName: string): Mutan
             },
             context: getContext(sourceFile, node),
             description: describeMutation(isBoundary ? "BoundaryCondition" : "BinaryOperator", operator, replacement),
+            expressionText: node.getText(),
           });
         }
       }
@@ -156,6 +158,7 @@ function collectUnaryMutations(sourceFile: SourceFile, fileName: string, startId
             },
             context: getContext(sourceFile, node),
             description: describeMutation("UnaryOperator", mutation.original, replacement),
+            expressionText: node.getText(),
           });
         }
       }
@@ -188,6 +191,7 @@ function collectBooleanMutations(sourceFile: SourceFile, fileName: string, start
         },
         context: getContext(sourceFile, node),
         description: describeMutation("BooleanLiteral", original, replacement),
+        expressionText: node.getText(),
       });
     }
   });
@@ -217,6 +221,7 @@ function collectConditionalMutations(sourceFile: SourceFile, fileName: string, s
         },
         context: getContext(sourceFile, node, 3),
         description: describeMutation("ConditionalRemoval", condition.getText(), "if-branch"),
+        expressionText: condition.getText(),
       });
 
       mutants.push({
@@ -231,6 +236,7 @@ function collectConditionalMutations(sourceFile: SourceFile, fileName: string, s
         },
         context: getContext(sourceFile, node, 3),
         description: describeMutation("ConditionalRemoval", condition.getText(), "else-branch"),
+        expressionText: condition.getText(),
       });
     }
   });
@@ -355,6 +361,142 @@ For each mutation:
   return output;
 }
 
+export interface MutantGroup {
+  signature: string;
+  mutatorName: string;
+  original: string;
+  replacement: string;
+  description: string;
+  expressionText: string;
+  instances: MutantInfo[];
+}
+
+export function groupMutantsBySignature(mutants: MutantInfo[]): MutantGroup[] {
+  const groups = new Map<string, MutantGroup>();
+
+  for (const mutant of mutants) {
+    const exprText = mutant.expressionText || mutant.original;
+    const normalized = exprText.replace(/\s+/g, " ").trim();
+    const signature = `${mutant.mutatorName}|${mutant.original}|${mutant.replacement}|${normalized}`;
+
+    const existing = groups.get(signature);
+    if (existing) {
+      existing.instances.push(mutant);
+    } else {
+      groups.set(signature, {
+        signature,
+        mutatorName: mutant.mutatorName,
+        original: mutant.original,
+        replacement: mutant.replacement,
+        description: mutant.description,
+        expressionText: normalized,
+        instances: [mutant],
+      });
+    }
+  }
+
+  return Array.from(groups.values());
+}
+
+export function formatGroupedMutantsForTestGeneration(mutants: MutantInfo[]): string {
+  const groups = groupMutantsBySignature(mutants);
+
+  // Organize groups by file (use first instance's file for ordering)
+  const fileOrder: string[] = [];
+  const groupsByFile = new Map<string, MutantGroup[]>();
+
+  for (const group of groups) {
+    const primaryFile = group.instances[0].fileName;
+    if (!groupsByFile.has(primaryFile)) {
+      fileOrder.push(primaryFile);
+      groupsByFile.set(primaryFile, []);
+    }
+    groupsByFile.get(primaryFile)!.push(group);
+  }
+
+  let output = `# Mutation-Guided Test Generation
+
+Each mutation below represents a **potential bug**. Write tests that would **FAIL if the mutation were applied**.
+
+## Why This Works
+- Mutations simulate real bug patterns (wrong operators, off-by-one errors, flipped conditions)
+- A test that catches a mutation will catch the real bug it represents
+- If your test passes with the mutation, your test is too weak
+
+---
+
+`;
+
+  for (const fileName of fileOrder) {
+    const fileGroups = groupsByFile.get(fileName)!;
+    output += `## File: ${fileName}\n\n`;
+
+    // Sub-group by mutation type
+    const byType = new Map<string, MutantGroup[]>();
+    for (const g of fileGroups) {
+      const existing = byType.get(g.mutatorName) || [];
+      existing.push(g);
+      byType.set(g.mutatorName, existing);
+    }
+
+    for (const [mutationType, typeGroups] of byType) {
+      const totalInstances = typeGroups.reduce((sum, g) => sum + g.instances.length, 0);
+      output += `### ${mutationType} Mutations (${typeGroups.length} unique, ${totalInstances} total)\n\n`;
+
+      for (const group of typeGroups) {
+        const representative = group.instances[0];
+        output += `**${representative.id}**: ${group.description}`;
+        if (group.instances.length > 1) {
+          output += ` (${group.instances.length} identical instances)`;
+        }
+        output += `\n`;
+        output += `- Expression: \`${group.expressionText}\`\n`;
+        output += `- Original: \`${group.original}\`\n`;
+        output += `- Mutated to: \`${group.replacement}\`\n`;
+        if (group.instances.length > 1) {
+          output += `- Locations:\n`;
+          for (const instance of group.instances) {
+            output += `  - ${instance.fileName} Line ${instance.location.start.line}\n`;
+          }
+          output += `- Context (representative):\n`;
+        } else {
+          output += `- Location: Line ${representative.location.start.line}\n`;
+          output += `- Context:\n`;
+        }
+        output += `\`\`\`typescript\n${representative.context}\n\`\`\`\n`;
+        output += `- **Test requirement**: Write a test that fails if \`${group.original}\` becomes \`${group.replacement}\` in \`${group.expressionText}\``;
+        if (group.instances.length > 1) {
+          output += `. This covers ${group.instances.length} locations`;
+        }
+        output += `\n\n`;
+      }
+    }
+  }
+
+  output += `---
+
+## Test Writing Guidelines
+
+For each mutation:
+1. **Identify the bug**: What error does this mutation represent?
+2. **Find the edge case**: What input would expose the difference?
+3. **Write the assertion**: What observable behavior changes?
+
+**Do NOT**:
+- Write tests that just check it doesn't throw
+- Use mocks that return exactly what you assert against
+- Write \`assertNotNull\` without meaningful follow-up
+- Mirror the implementation logic (tautological tests)
+
+**DO**:
+- Test boundary conditions (exact values where behavior changes)
+- Test both sides of conditionals
+- Verify specific output values
+`;
+
+  return output;
+}
+
 async function main() {
   const args = process.argv.slice(2);
 
@@ -384,7 +526,10 @@ async function main() {
     process.exit(0);
   }
 
-  const output = formatMutantsForTestGeneration(mutants);
+  const noDedup = args.includes("--no-dedup");
+  const output = noDedup
+    ? formatMutantsForTestGeneration(mutants)
+    : formatGroupedMutantsForTestGeneration(mutants);
 
   if (args.includes("--output")) {
     const outputIdx = args.indexOf("--output");
