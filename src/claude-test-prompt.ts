@@ -1,3 +1,4 @@
+#!/usr/bin/env node
 import { generateMutants, formatMutantsForTestGeneration } from "./generate-mutants";
 import * as fs from "fs";
 import * as path from "path";
@@ -27,7 +28,7 @@ Each mutation below represents a realistic bug that could occur. Your job is to 
 `;
 
   // Add the formatted mutants
-  prompt += formatMutantsForTestGeneration(mutants, sourceCode);
+  prompt += formatMutantsForTestGeneration(mutants);
 
   // Add existing tests if available for context
   if (existingTests && existingTests.size > 0) {

@@ -1,3 +1,4 @@
+#!/usr/bin/env node
 import { Project, SyntaxKind, Node, SourceFile } from "ts-morph";
 import * as fs from "fs";
 import * as path from "path";
